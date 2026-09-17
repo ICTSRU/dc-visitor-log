@@ -1,7 +1,7 @@
 /**
  * SRU ICTD — Data Center Visitor Log
  * Google Apps Script backend (Web App)
- * Version: 1.5
+ * Version: 2.5
  *
  * Deployment:
  *   1. Create a Google Sheet, then Extensions > Apps Script, paste this file.
@@ -15,6 +15,12 @@
  */
 
 var SHEET_NAME = 'VisitorLog';
+
+/* Columns that must stay PLAIN TEXT. Without this, Google Sheets converts
+   "11:13" into a time value and "2026-09-17" into a date value, and the value
+   then reads back shifted by the offset between the spreadsheet timezone and
+   the script timezone. Storing them as text removes that whole class of bug. */
+var TEXT_COLUMNS = ['VisitDate', 'TimeIn', 'TimeOut'];
 
 var HEADERS = [
   'RecordID','VisitDate','TimeIn','TimeOut','DurationMin',
@@ -49,8 +55,51 @@ function setupSheet() {
   sh.getRange(1, 1, 1, sh.getLastColumn())
     .setFontWeight('bold').setBackground('#f0ebf8').setFontColor('#3a1464');
   sh.setFrozenRows(1);
+  forceTextColumns_(sh);
   sh.autoResizeColumns(1, sh.getLastColumn());
   return 'Sheet ready: ' + SHEET_NAME;
+}
+
+/** Sets the date/time columns to plain text so Sheets stops coercing them. */
+function forceTextColumns_(sh) {
+  var map = headerMap_(sh);
+  var rows = Math.max(1, sh.getMaxRows() - 1);
+  TEXT_COLUMNS.forEach(function (k) {
+    if (map[k] === undefined) return;
+    sh.getRange(2, map[k] + 1, rows, 1).setNumberFormat('@');
+  });
+}
+
+/** The timezone the SPREADSHEET displays values in — not the script's. */
+function tz_() {
+  try { return SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone(); }
+  catch (e) { return Session.getScriptTimeZone(); }
+}
+
+function pad2_(n) { return (n < 10 ? '0' : '') + n; }
+
+/** Reads a cell that should hold HH:mm, whatever Sheets turned it into. */
+function readTime_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'number') {                 /* serial time: fraction of a day */
+    var mins = Math.round((v % 1) * 1440);
+    return pad2_(Math.floor(mins / 60) % 24) + ':' + pad2_(mins % 60);
+  }
+  if (v instanceof Date) return Utilities.formatDate(v, tz_(), 'HH:mm');
+  var m = String(v).match(/(\d{1,2}):(\d{2})/);
+  return m ? pad2_(Number(m[1])) + ':' + m[2] : String(v);
+}
+
+/** Reads a cell that should hold yyyy-MM-dd, whatever Sheets turned it into. */
+function readDate_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date) return Utilities.formatDate(v, tz_(), 'yyyy-MM-dd');
+  if (typeof v === 'number') {
+    var d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 86400000);
+    return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+  }
+  var m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[0] : String(v);
 }
 
 function headerMap_(sh) {
@@ -89,8 +138,10 @@ function doPost(e) {
 
 function handle_(action, p) {
   try {
-    if (action === 'ping')     return { ok: true, sheet: SHEET_NAME, version: '1.5' };
+    if (action === 'ping')     return { ok: true, sheet: SHEET_NAME, version: '2.5',
+                                       spreadsheetTimeZone: tz_(), scriptTimeZone: Session.getScriptTimeZone() };
     if (action === 'list')     return { ok: true, rows: listRows_() };
+    if (action === 'repair')   return { ok: true, result: repairTimeColumns() };
     if (action === 'checkin')  return { ok: true, record: appendRow_(p.record || {}) };
     if (action === 'checkout') return { ok: true, updated: checkout_(p) };
     return { ok: false, error: 'Unknown action: ' + action };
@@ -107,7 +158,6 @@ function listRows_() {
   if (last < 2) return [];
   var map = headerMap_(sh);
   var values = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
-  var tz = Session.getScriptTimeZone();
 
   return values.filter(function (row) {
     return String(row[map.RecordID] || '').trim() !== '';
@@ -115,11 +165,9 @@ function listRows_() {
     var obj = {};
     Object.keys(map).forEach(function (k) {
       var v = row[map[k]];
-      if (v instanceof Date) {
-        v = (k === 'VisitDate') ? Utilities.formatDate(v, tz, 'yyyy-MM-dd')
-          : (k === 'TimeIn' || k === 'TimeOut') ? Utilities.formatDate(v, tz, 'HH:mm')
-          : v.toISOString();
-      }
+      if (k === 'VisitDate')                      v = readDate_(v);
+      else if (k === 'TimeIn' || k === 'TimeOut') v = readTime_(v);
+      else if (v instanceof Date)                 v = v.toISOString();
       obj[k] = (v === null || v === undefined) ? '' : String(v);
     });
     return obj;
@@ -140,7 +188,14 @@ function appendRow_(rec) {
     if (!row[map.RecordID]) row[map.RecordID] = 'DCV-' + new Date().getTime();
     if (map.Status !== undefined && !row[map.Status]) row[map.Status] = 'Inside';
     if (map.CreatedAt !== undefined && !row[map.CreatedAt]) row[map.CreatedAt] = new Date().toISOString();
-    sh.appendRow(row);
+
+    /* Write into a row whose date/time cells are plain text, so "11:13" is
+       stored exactly as sent instead of being converted to a time value. */
+    var r = sh.getLastRow() + 1;
+    TEXT_COLUMNS.forEach(function (k) {
+      if (map[k] !== undefined) sh.getRange(r, map[k] + 1).setNumberFormat('@');
+    });
+    sh.getRange(r, 1, 1, width).setValues([row]);
     return rec;
   } finally {
     lock.releaseLock();
@@ -159,7 +214,7 @@ function checkout_(p) {
     for (var i = 0; i < ids.length; i++) {
       if (String(ids[i][0]).trim() === String(p.recordId).trim()) {
         var r = i + 2;
-        if (map.TimeOut     !== undefined) sh.getRange(r, map.TimeOut + 1).setValue(p.timeOut || '');
+        if (map.TimeOut     !== undefined) sh.getRange(r, map.TimeOut + 1).setNumberFormat('@').setValue(p.timeOut || '');
         if (map.DurationMin !== undefined) sh.getRange(r, map.DurationMin + 1).setValue(p.durationMin || '');
         if (map.Status      !== undefined) sh.getRange(r, map.Status + 1).setValue('Completed');
         if (map.UpdatedAt   !== undefined) sh.getRange(r, map.UpdatedAt + 1).setValue(p.updatedAt || new Date().toISOString());

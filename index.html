@@ -31,6 +31,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:'Cairo',Tahoma,A
 .sru-diag{height:4px;background:linear-gradient(90deg,var(--blue) 0 33%,var(--purple) 33% 100%)}
 .container{max-width:1240px;margin:0 auto;padding:18px 20px 60px}
 .statusbar{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted);margin-bottom:14px;flex-wrap:wrap}
+.statusbar[hidden]{display:none}
+[hidden]{display:none!important}
 .dot{width:8px;height:8px;border-radius:50%;background:#c9c3d4;display:inline-block}
 .dot.on{background:var(--ok)} .dot.off{background:var(--danger)}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:18px}
@@ -54,6 +56,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--purple);
 input[readonly]{background:#faf9fc;color:var(--muted)}
 textarea{min-height:64px;resize:vertical}
 .hint{font-size:11px;color:var(--muted)}
+.hint.returning{color:var(--blue);font-weight:700;font-size:12px;display:flex;align-items:center;gap:5px}
+input.autofilled,select.autofilled{background:var(--blue-light);border-color:var(--blue)}
 .btn{font-family:inherit;font-size:14px;font-weight:600;padding:9px 16px;border-radius:var(--radius);cursor:pointer;border:1px solid var(--purple);display:inline-flex;align-items:center;gap:7px}
 .btn-p{background:var(--purple);color:#fff}
 .btn-p:hover{background:var(--purple-dark)}
@@ -114,7 +118,7 @@ tbody tr:hover{background:#fbfafd}
     <div class="sub">Data Center Physical Access &amp; Visitor Log</div>
   </div>
   <div class="spacer"></div>
-  <div class="ver" id="verChip">v1.5</div>
+  <div class="ver" id="verChip">v2.5</div>
 </div>
 
 <div class="navbar no-print">
@@ -126,16 +130,13 @@ tbody tr:hover{background:#fbfafd}
 
 <div class="container">
 
-  <div class="statusbar no-print">
+  <!-- Status strip is hidden while everything is healthy; it appears only on a backend problem. -->
+  <div class="statusbar no-print" id="statusBar" hidden>
     <span class="dot" id="connDot"></span>
-    <span id="connTxt">Checking backend…</span>
-    <span>•</span>
-    <span id="clock"></span>
-    <span>•</span>
-    <span>Logged by:</span>
-    <input id="operatorInput" placeholder="Operator name" style="width:180px;padding:4px 8px;font-size:12px">
-    <button class="btn btn-s btn-sm" id="btnRefresh" style="margin-left:auto"><i data-lucide="refresh-cw"></i> Refresh</button>
+    <span id="connTxt"></span>
   </div>
+  <span id="clock" hidden></span>
+  <input id="operatorInput" type="hidden">
 
   <div class="stats">
     <div class="stat b"><div class="ic"><i data-lucide="door-open"></i></div><div><div class="n" id="sInside">0</div><div class="l">Inside now</div></div></div>
@@ -153,7 +154,14 @@ tbody tr:hover{background:#fbfafd}
           <div class="grid">
             <div class="field">
               <label>Visitor full name <span class="req">*</span></label>
-              <input name="VisitorName" required placeholder="As written on the ID">
+              <select id="visitorSelect" required>
+                <option value="">— Select visitor —</option>
+              </select>
+              <div class="hint" id="returningHint" hidden></div>
+            </div>
+            <div class="field" id="fldNewVisitor" hidden>
+              <label>New visitor name <span class="req">*</span></label>
+              <input id="newVisitorName" autocomplete="off" placeholder="Full name as written on the ID">
             </div>
             <div class="field">
               <label>ID type <span class="req">*</span></label>
@@ -167,11 +175,11 @@ tbody tr:hover{background:#fbfafd}
             </div>
             <div class="field">
               <label>ID number <span class="req">*</span></label>
-              <input name="IDNumber" required inputmode="numeric" placeholder="e.g. 1XXXXXXXXX">
+              <input name="IDNumber" id="idInput" required autocomplete="off" inputmode="numeric" placeholder="e.g. 1XXXXXXXXX">
             </div>
             <div class="field">
-              <label>Visitor email <span class="req">*</span></label>
-              <input name="VisitorEmail" type="email" required placeholder="name@domain.com">
+              <label>Visitor email</label>
+              <input name="VisitorEmail" type="email" placeholder="name@domain.com (optional)">
             </div>
             <div class="field">
               <label>Mobile number</label>
@@ -225,20 +233,28 @@ tbody tr:hover{background:#fbfafd}
             </div>
             <div class="field">
               <label>Host / escort (SRU staff) <span class="req">*</span></label>
-              <input name="EscortName" required placeholder="Full name of the accompanying SRU employee">
+              <select id="escortSelect" required>
+                <option value="">— Select escort —</option>
+              </select>
             </div>
             <div class="field">
               <label>Escort badge / employee no. <span class="req">*</span></label>
-              <input name="EscortBadge" required placeholder="e.g. 10234">
+              <input name="EscortBadge" id="escortBadge" required readonly placeholder="Filled from the escort">
+            </div>
+            <div class="field" id="fldEscortOther" hidden>
+              <label>Escort name (not listed) <span class="req">*</span></label>
+              <input id="escortOther" placeholder="Full name of the accompanying SRU employee">
             </div>
             <div class="field">
               <label>Access authorized by</label>
-              <input name="ApprovedBy" placeholder="Approving manager (if applicable)">
+              <select name="ApprovedBy" id="approvedBy">
+                <option value="">— Not applicable —</option>
+              </select>
             </div>
           </div>
           <div class="actions no-print">
             <button type="submit" class="btn btn-p"><i data-lucide="log-in"></i> Register check-in</button>
-            <button type="reset" class="btn btn-s"><i data-lucide="eraser"></i> Clear form</button>
+            <button type="reset" class="btn btn-s" onclick="setTimeout(function(){clearAutofillMarks();onVisitorChange();applyFormDefaults();},0)"><i data-lucide="eraser"></i> Clear form</button>
           </div>
         </div>
       </div>
@@ -250,6 +266,7 @@ tbody tr:hover{background:#fbfafd}
     <div class="card">
       <div class="card-h"><i data-lucide="users"></i> Visitors currently inside the data center
         <div class="spacer"></div>
+        <button class="btn btn-s btn-sm no-print" data-refresh><i data-lucide="refresh-cw"></i> Refresh</button>
         <button class="btn btn-s btn-sm no-print" onclick="window.print()"><i data-lucide="printer"></i> Print</button>
       </div>
       <div class="tbl-wrap">
@@ -276,6 +293,7 @@ tbody tr:hover{background:#fbfafd}
         <div class="field"><label>Status</label>
           <select id="fStatus"><option value="">All</option><option>Inside</option><option>Completed</option></select>
         </div>
+        <button class="btn btn-s btn-sm" data-refresh><i data-lucide="refresh-cw"></i> Refresh</button>
         <button class="btn btn-s btn-sm" id="btnCsv"><i data-lucide="download"></i> Export CSV</button>
         <button class="btn btn-s btn-sm" onclick="window.print()"><i data-lucide="printer"></i> Print</button>
       </div>
@@ -292,7 +310,7 @@ tbody tr:hover{background:#fbfafd}
     </div>
   </section>
 
-  <div class="foot">Sulaiman Al Rajhi University — Executive Directorate of Communication &amp; Information Technology · Data Center Visitor Log <strong>v1.5</strong></div>
+  <div class="foot">Sulaiman Al Rajhi University — Executive Directorate of Communication &amp; Information Technology · Data Center Visitor Log <strong>v2.5</strong></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -300,15 +318,44 @@ tbody tr:hover{background:#fbfafd}
 <script>
 /* ============================================================
    SRU ICTD — Data Center Visitor Log
-   Version: 1.5
+   Version: 2.5
    ============================================================ */
-const APP_VERSION = "1.5";
+const APP_VERSION = "2.5";
 
 /* Deployed Google Apps Script Web App (backend). Update here if the deployment is replaced. */
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbyrApr98u4dpBZptWzJMy6bapzUd8c9e7ONUNC1AJXigzGtvpYRGvY3a4xvJ4_9R5j4/exec";
 
 /* Hours after which an open visit is flagged in the stat cards and the Inside table. */
 const OPEN_VISIT_HOURS = 4;
+
+/* Authorised escorts. Add, remove or edit rows here — the dropdown and the
+   badge autofill both read from this list, nothing else needs changing.      */
+const ESCORTS = [
+  { name: "M Nawaz",         badge: "24425"  },
+  { name: "Nayed Alrashidi", badge: "360106" },
+  { name: "M ElMahdy",       badge: "420156" }
+];
+/* Set to false to forbid escorts outside the list above. */
+const ALLOW_OTHER_ESCORT = true;
+
+/* Authorities who may approve data center access. Edit this list only. */
+const APPROVERS = ["CIO", "Operation Manager"];
+
+/* Values preselected on a fresh form. Set either to "" for no preselection. */
+const DEFAULT_PURPOSE  = "Guided tour / official visit";
+const DEFAULT_ESCORT   = "M Nawaz";
+const DEFAULT_APPROVER = "CIO";
+
+/* Known visitors. The dropdown shows these first, then anyone else already in
+   the Google Sheet, then "Add new visitor…". Edit or extend this list freely;
+   a visitor added through the form appears here automatically from the sheet. */
+const VISITORS = [
+  { VisitorName:"M Nawaz",            IDType:"SRU Staff Card", IDNumber:"24425",  VisitorEmail:"n.nawaz@sr.edu.sa",    VisitorMobile:"581123546", VisitorType:"SRU Internal" },
+  { VisitorName:"Nayed Alrashidi",    IDType:"SRU Staff Card", IDNumber:"360106", VisitorEmail:"n.alrashidi@sr.edu.sa",VisitorMobile:"554982887", VisitorType:"SRU Internal" },
+  { VisitorName:"M ElMahdy",          IDType:"SRU Staff Card", IDNumber:"420156", VisitorEmail:"m.elmahdy@sr.edu.sa",  VisitorMobile:"580696086", VisitorType:"SRU Internal" },
+  { VisitorName:"Dr. Nasser AbouNar", IDType:"SRU Staff Card", IDNumber:"25812",  VisitorEmail:"nabounar@sr.edu.sa",   VisitorMobile:"560274022", VisitorType:"SRU Internal" },
+  { VisitorName:"ELSeef",             IDType:"SRU Staff Card", IDNumber:"11112",  VisitorEmail:"",                     VisitorMobile:"",          VisitorType:"SRU Internal" }
+];
 
 const LS = "sru_dcvisitor_v1";
 const $  = (s,r) => (r||document).querySelector(s);
@@ -331,6 +378,34 @@ function toast(msg, kind){
   t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(()=>{ t.style.display="none"; }, 3200);
 }
 function store(k,v){ try{ if(v===undefined) return JSON.parse(localStorage.getItem(k)||"null"); localStorage.setItem(k, JSON.stringify(v)); }catch(e){ return null; } }
+/* Defensive: whatever shape a legacy row's time/date arrives in, reduce it to
+   HH:mm / yyyy-MM-dd before anything else uses it. */
+function normTime(v){
+  if(v == null || v === "") return "";
+  const s = String(v);
+  const iso = s.match(/T(\d{2}):(\d{2})/);          /* an ISO timestamp        */
+  if(iso) return iso[1]+":"+iso[2];
+  const hm = s.match(/(\d{1,2}):(\d{2})/);           /* plain HH:mm             */
+  if(hm) return pad(Number(hm[1]))+":"+hm[2];
+  const num = Number(s);                             /* spreadsheet time serial */
+  if(!isNaN(num) && num > 0 && num < 1){
+    const m = Math.round((num % 1) * 1440);
+    return pad(Math.floor(m/60)%24)+":"+pad(m%60);
+  }
+  return s;
+}
+function normDate(v){
+  if(v == null || v === "") return "";
+  const m = String(v).match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[0] : String(v);
+}
+function normalizeRecord(r){
+  r.VisitDate = normDate(r.VisitDate);
+  r.TimeIn    = normTime(r.TimeIn);
+  r.TimeOut   = normTime(r.TimeOut);
+  return r;
+}
+
 function minutesBetween(dateStr, t1, t2){
   if(!dateStr || !t1 || !t2) return "";
   const a = new Date(dateStr+"T"+t1+":00"), b = new Date(dateStr+"T"+t2+":00");
@@ -363,6 +438,8 @@ function setConn(state, text){
   const d = $("#connDot");
   d.className = "dot " + (state==="on" ? "on" : state==="off" ? "off" : "");
   $("#connTxt").textContent = text;
+  /* The strip stays hidden while the backend is healthy. */
+  $("#statusBar").hidden = (state === "on");
 }
 
 function loadRecords(){
@@ -376,7 +453,7 @@ function loadRecords(){
   setConn("", "Connecting…");
   return api("list").then(j => {
     LOCAL_ONLY = false;
-    RECORDS = (j.rows || []);
+    RECORDS = (j.rows || []).map(normalizeRecord);
     setConn("on", "Connected to Google Sheets · " + RECORDS.length + " records");
     render();
   }).catch(e => {
@@ -454,6 +531,8 @@ function render(){
   }).join("");
   $("#regEmpty").style.display = rows.length ? "none" : "block";
 
+  buildVisitorIndex();
+
   if(window.lucide) lucide.createIcons();
 }
 
@@ -515,8 +594,166 @@ function tick(){
   }
 }
 
+
+/* ---------- visitor directory + autofill ----------
+   The dropdown is built from three sources, in order:
+     1. the VISITORS constant above (the maintained directory),
+     2. every other visitor already recorded in the Google Sheet,
+     3. "Add new visitor…", which opens a name box and blank fields.
+   Because source 2 comes from the sheet, a visitor added on any console by any
+   operator appears on every console after the next refresh.                  */
+const AF_FIELDS = ["IDType","IDNumber","VisitorEmail","VisitorMobile","VisitorType"];
+let VISITOR_BY_NAME = {};
+
+function norm(v){ return String(v||"").trim().replace(/\s+/g," ").toLowerCase(); }
+
+function buildVisitorIndex(){
+  VISITOR_BY_NAME = {};
+  const order = [];
+  VISITORS.forEach(v => {
+    const k = norm(v.VisitorName);
+    if(!k) return;
+    if(!VISITOR_BY_NAME[k]) order.push(k);
+    VISITOR_BY_NAME[k] = Object.assign({ _seed:true }, v);
+  });
+  /* oldest → newest, so the most recent sheet record wins for non-seeded people */
+  RECORDS.forEach(r => {
+    const k = norm(r.VisitorName);
+    if(!k) return;
+    if(VISITOR_BY_NAME[k] && VISITOR_BY_NAME[k]._seed) return;   /* directory is authoritative */
+    if(!VISITOR_BY_NAME[k]) order.push(k);
+    VISITOR_BY_NAME[k] = r;
+  });
+
+  const sel = $("#visitorSelect");
+  if(!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">— Select visitor —</option>'
+    + order.map(k => '<option value="'+esc(VISITOR_BY_NAME[k].VisitorName)+'">'
+        + esc(VISITOR_BY_NAME[k].VisitorName)+'</option>').join("")
+    + '<option value="__new__">➕ Add new visitor…</option>';
+  if(keep) sel.value = keep;
+}
+
+function clearAutofillMarks(){
+  $$("#checkinForm .autofilled").forEach(el => el.classList.remove("autofilled"));
+  $$("#checkinForm input, #checkinForm select").forEach(el => { delete el.dataset.touched; });
+  const h = $("#returningHint"); h.hidden = true; h.textContent = ""; h.className = "hint";
+}
+
+function setIdentityFields(rec){
+  const form = $("#checkinForm");
+  AF_FIELDS.forEach(k => {
+    const el = form[k];
+    if(!el) return;
+    el.value = rec && rec[k] ? rec[k] : (el.tagName === "SELECT" ? el.options[0].value : "");
+    el.classList.toggle("autofilled", !!(rec && rec[k]));
+    delete el.dataset.touched;
+  });
+}
+
+function onVisitorChange(){
+  const sel  = $("#visitorSelect");
+  const isNew = sel.value === "__new__";
+  const hint = $("#returningHint");
+
+  $("#fldNewVisitor").hidden   = !isNew;
+  $("#newVisitorName").required = isNew;
+
+  if(isNew){
+    $("#newVisitorName").value = "";
+    setIdentityFields(null);
+    $$("#checkinForm .autofilled").forEach(el => el.classList.remove("autofilled"));
+    hint.className = "hint";
+    hint.textContent = "New visitor — fill the identification fields; the name joins the list after check-in.";
+    hint.hidden = false;
+    $("#newVisitorName").focus();
+    return;
+  }
+
+  const rec = VISITOR_BY_NAME[norm(sel.value)];
+  setIdentityFields(rec || null);
+  if(rec){
+    hint.className = "hint returning";
+    hint.textContent = rec._seed ? "From the visitor directory — edit any field to override."
+      : "Returning visitor — details from the visit on " + (rec.VisitDate || "record") + ". Edit any field to override.";
+    hint.hidden = false;
+  } else {
+    hint.hidden = true;
+  }
+  if(window.lucide) lucide.createIcons();
+}
+
+function visitorName(){
+  const sel = $("#visitorSelect");
+  return sel.value === "__new__" ? $("#newVisitorName").value.trim() : sel.value;
+}
+
+/* ---------- form defaults ---------- */
+function applyFormDefaults(){
+  const purpose = $("#checkinForm").Purpose;
+  if(purpose && DEFAULT_PURPOSE){
+    const ok = Array.prototype.some.call(purpose.options, o => o.value === DEFAULT_PURPOSE);
+    if(ok) purpose.value = DEFAULT_PURPOSE;
+  }
+  const sel = $("#escortSelect");
+  if(sel && DEFAULT_ESCORT){
+    const ok = Array.prototype.some.call(sel.options, o => o.value === DEFAULT_ESCORT);
+    if(ok){ sel.value = DEFAULT_ESCORT; onEscortChange(); }
+  }
+  const appr = $("#approvedBy");
+  if(appr && DEFAULT_APPROVER){
+    const ok = Array.prototype.some.call(appr.options, o => o.value === DEFAULT_APPROVER);
+    if(ok) appr.value = DEFAULT_APPROVER;
+  }
+}
+
+/* ---------- approver dropdown ---------- */
+function buildApproverSelect(){
+  const sel = $("#approvedBy");
+  sel.innerHTML = '<option value="">— Not applicable —</option>'
+    + APPROVERS.map(a => '<option value="'+esc(a)+'">'+esc(a)+'</option>').join("");
+}
+
+/* ---------- escort dropdown + badge autofill ---------- */
+function buildEscortSelect(){
+  const sel = $("#escortSelect");
+  sel.innerHTML = '<option value="">— Select escort —</option>'
+    + ESCORTS.map(e => '<option value="'+esc(e.name)+'" data-badge="'+esc(e.badge)+'">'
+        + esc(e.name)+'</option>').join("")
+    + (ALLOW_OTHER_ESCORT ? '<option value="__other__">Other (not listed)…</option>' : "");
+}
+
+function onEscortChange(){
+  const sel = $("#escortSelect");
+  const other = sel.value === "__other__";
+  const badge = $("#escortBadge");
+  $("#fldEscortOther").hidden = !other;
+  $("#escortOther").required = other;
+  if(other){
+    badge.readOnly = false; badge.value = ""; badge.placeholder = "e.g. 10234";
+    badge.classList.remove("autofilled");
+  } else {
+    badge.readOnly = true; badge.placeholder = "Filled from the escort";
+    $("#escortOther").value = "";
+    const opt = sel.selectedOptions[0];
+    badge.value = (opt && opt.dataset.badge) ? opt.dataset.badge : "";
+    badge.classList.toggle("autofilled", !!badge.value);
+  }
+}
+
+function escortName(){
+  const sel = $("#escortSelect");
+  return sel.value === "__other__" ? $("#escortOther").value.trim() : sel.value;
+}
+
 document.addEventListener("DOMContentLoaded", function(){
   $("#verChip").textContent = "v"+APP_VERSION;
+  buildEscortSelect();
+  buildApproverSelect();
+  buildVisitorIndex();
+  applyFormDefaults();
+  $("#escortSelect").addEventListener("change", onEscortChange);
 
   const saved = store(LS+"_cfg") || {};
   CFG.url = SHEET_URL;                 /* backend is fixed in this build */
@@ -536,17 +773,30 @@ document.addEventListener("DOMContentLoaded", function(){
     $("#tab-"+this.dataset.tab).classList.add("active");
   }));
 
+  /* visitor dropdown */
+  $("#visitorSelect").addEventListener("change", onVisitorChange);
+  $$("#checkinForm input, #checkinForm select").forEach(el => {
+    const mark = function(){ this.classList.remove("autofilled"); this.dataset.touched = "1"; };
+    el.addEventListener("input", mark);
+    if(el.tagName === "SELECT") el.addEventListener("change", mark);
+  });
+
   /* check-in submit */
   $("#checkinForm").addEventListener("submit", function(e){
     e.preventDefault();
     const fd = new FormData(this), data = {};
     fd.forEach((v,k) => { data[k] = String(v).trim(); });
     data.Organization = ""; data.Department = "";
+    data.EscortName = escortName();
+    data.VisitorName = visitorName();
     if(!data.VisitorType) data.VisitorType = "SRU Internal";
     const btn = $("#checkinForm button[type=submit]");
     btn.disabled = true;
     checkIn(data).then(() => {
       this.reset();
+      clearAutofillMarks();
+      onVisitorChange();
+      applyFormDefaults();
       tick();
       btn.disabled = false;
       $$(".navbar button").forEach(x => x.classList.remove("active"));
@@ -565,7 +815,7 @@ document.addEventListener("DOMContentLoaded", function(){
   /* filters */
   ["fSearch","fFrom","fTo","fStatus"].forEach(id => $("#"+id).addEventListener("input", render));
   $("#btnCsv").addEventListener("click", exportCsv);
-  $("#btnRefresh").addEventListener("click", () => loadRecords().then(() => toast("Refreshed","ok")));
+  $$("[data-refresh]").forEach(b => b.addEventListener("click", () => loadRecords().then(() => toast("Refreshed","ok"))));
 
   tick(); setInterval(tick, 20000);
   setInterval(render, 60000);

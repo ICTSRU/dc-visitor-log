@@ -1,6 +1,6 @@
 # Data Center Visitor Log — SRU ICTD
 
-**Version 1.5** · Sulaiman Al Rajhi University — Executive Directorate of Communication & Information Technology
+**Version 2.5** · Sulaiman Al Rajhi University — Executive Directorate of Communication & Information Technology
 
 Reception/NOC console for recording physical access to the university data center. Single HTML page, no build step, no server — data is stored in Google Sheets through a Google Apps Script Web App.
 
@@ -20,7 +20,7 @@ Reception/NOC console for recording physical access to the university data cente
 ```bash
 git init
 git add .
-git commit -m "Data Center Visitor Log v1.5"
+git commit -m "Data Center Visitor Log v2.5"
 git branch -M main
 git remote add origin https://github.com/<org>/<repo>.git
 git push -u origin main
@@ -34,11 +34,18 @@ Everything is set in the first lines of the script block in `index.html`:
 
 | Constant | Current value | Meaning |
 |---|---|---|
-| `APP_VERSION` | `1.5` | Shown in the header chip and footer |
+| `APP_VERSION` | `2.5` | Shown in the header chip and footer |
 | `SHEET_URL` | `https://script.google.com/macros/s/AKfycbyr…/exec` | Deployed Apps Script Web App |
 | `OPEN_VISIT_HOURS` | `4` | Hours after which an open visit is flagged red |
+| `ESCORTS` | 3 entries | Authorised escorts — name + badge. Drives the dropdown and the badge autofill |
+| `ALLOW_OTHER_ESCORT` | `true` | Set `false` to forbid escorts outside the list |
+| `APPROVERS` | CIO, Operation Manager | Authorities listed in *Access authorized by* |
+| `VISITORS` | 5 entries | Known-visitor directory driving the name dropdown and its autofill |
+| `DEFAULT_PURPOSE` | `Guided tour / official visit` | Preselected purpose on a fresh form (`""` for none) |
+| `DEFAULT_ESCORT` | `M Nawaz` | Preselected escort on a fresh form (`""` for none) |
+| `DEFAULT_APPROVER` | `CIO` | Preselected value in *Access authorized by* (`""` for none) |
 
-There is no Setup tab — operators cannot change the backend. The only operator-facing setting is the **name field in the status bar**, remembered per browser and written to the `LoggedBy` column.
+There is no Setup tab and no status strip — operators see only the three working tabs. The connection strip appears **only when the backend is unreachable**; while everything is healthy it stays hidden. Refresh buttons sit in the *Currently Inside* card header and the *Visitor Register* toolbar.
 
 ## Backend
 
@@ -55,9 +62,27 @@ Columns are matched **by header name**, so the sheet may be reordered or extende
 | Visit | `Purpose`, `PurposeDetails`, `Notes` |
 | Accountability | `EscortName`, `EscortBadge`, `ApprovedBy` |
 
+### Time and date storage
+
+`VisitDate`, `TimeIn` and `TimeOut` are kept as **plain text** in the sheet (`@` number format). Left as normal cells, Google Sheets converts `11:13` into a *time value*, which then reads back shifted by the offset between the spreadsheet's timezone and the Apps Script project's timezone. The script sets the format on those columns, writes into pre-formatted cells, and reads any legacy value back through the spreadsheet's own timezone.
+
+`action=ping` reports both timezones, which is the quickest way to confirm they agree.
+
 ### Redeploying the backend
 
 After editing `Code.gs`, use **Deploy → Manage deployments → Edit → New version**. This keeps the same `/exec` URL, so `index.html` needs no change. Creating a *new deployment* instead issues a new URL and requires updating `SHEET_URL` and releasing a new version.
+
+## Visitor directory and autofill
+
+**Visitor full name** is a dropdown built from three sources, in order:
+
+1. the `VISITORS` constant in `index.html` — the maintained directory,
+2. every other visitor already recorded in the Google Sheet,
+3. **➕ Add new visitor…**, at the bottom.
+
+Selecting a name fills ID type, ID number, email, mobile and visitor type; the boxes are tinted blue and stay editable, so a one-off correction never needs a code change. Choosing **Add new visitor…** opens a name box and blanks the identification fields.
+
+A visitor added through the form appears in the dropdown immediately on that console, and on every other console after their next refresh — because source 2 reads from the sheet, not from browser storage. To make someone a permanent directory entry (so their details are authoritative rather than taken from their last visit), add a row to `VISITORS`.
 
 ## Operational notes
 
